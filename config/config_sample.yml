@@ -1,0 +1,20 @@
+---
+verbose: False
+
+  diakinone:
+  email: 'foo@bar.com'
+  api_key_id: 'xxx'
+  api_key: 'xxx'
+  integrator_token: 'xxxxxxxxxxxx'
+
+influxdb:
+  username: 'influx_usernamehere'
+  password: 'influx_usernamepassword'
+  host: 'localhost'
+  port: '8086'
+  retention_policy: 'autogen'
+  db_name: 'db_namehere'
+
+logging:
+  logger_name: "daikinone2influx"
+  log_config: "/usr/local/daikinone2influx/config/logging.yml"
