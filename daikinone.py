@@ -7,17 +7,21 @@ import json
 import math
 import sys
 from requests.exceptions import HTTPError
+from datetime import datetime, timedelta, date
 
 import myconfig
 import mylogger
 
 pp = pprint.PrettyPrinter(indent=4)
+bogus_date = datetime(1900, 1, 1)
+date_format = "%Y-%m-%dT%H:%M:%SZ"
 
 session = requests.Session()
-verbose = 0
+verbose = True
 calls = 0
 
-accessToken = ''
+access_token = ''
+refresh_token = ''
 
 def flatten_json(nested_json):
     out = {}
@@ -44,6 +48,7 @@ class Request:
         self.allow_404 = allow_404
         self.token = None
         self.token_expire = bogus_date
+        self.refresh_token = None
         self.session = requests.Session()
         self.calls = 0
 
@@ -53,7 +58,7 @@ class Request:
     def make_request(self, method, url, payload=None,
                      header=None, is_get_token=False):
 
-        headers = {'content-type': "application/json"}
+        headers = {'content-type': 'application/json', 'Accept': 'application/json'}
         # add any headers needed
         if header is not None:
             headers.update(header)
@@ -82,7 +87,7 @@ class Request:
                                                 url=url,
                                                 headers=headers,
                                                 data=json.dumps(payload),
-                                                timeout=config['requests_timeout'])
+                                                timeout=myconfig.config['requests_timeout'])
                 self.calls = self.calls + 1
 
                 # If the response was successful, no Exception will be raised
@@ -105,7 +110,7 @@ class Request:
                     sys.exit(1)
             except Timeout as err:
                 print('Timeout ({}), maybe try again: {}'.
-                      format(config['requests_timeout'], err))
+                      format(myconfig.config['requests_timeout'], err))
             except Exception as err:
                 print('Other error occurred: {}'.format(err))
             else:
@@ -122,28 +127,14 @@ class Request:
         return response
 
     def get_token(self):
-        client_id = acct_info[self.account]['client_id']
-        client_secret = acct_info[self.account]['client_secret']
-        acct_id = acct_info[self.account]['acct_id']
+        email = myconfig.config['daikinone']['email']
+        password = myconfig.config['daikinone']['password']
 
-# something about the grant_type didn't work with oauthlib
-#    body= "account_id" + acct_id
-#    data = quote(body)
-#    auth = HTTPBasicAuth(client_id, client_secret)
-#    client = BackendApplicationClient(client_id=client_id)
-#    oauth = OAuth2Session(client=client)
-#    token = oauth.fetch_token(token_url='https://zoom.us/oauth2/token',
-# body=data, grant_type='account_credentials', auth=auth)
+        payload = {'email': email, "password": password}
 
-        auth_in = '{}:{}'.format(client_id, client_secret)
-        auth_encoded = base64.b64encode(bytes(auth_in, 'utf-8'))
-        auth_string = auth_encoded.decode("ascii")
+        url = 'https://api.daikinskyport.com/users/auth/login'
 
-        url = 'https://zoom.us/oauth/token?grant_type={}&account_id={}'.format('account_credentials', acct_id)
-        header = {'Host': 'zoom.us',
-                  'Authorization': 'Basic ' + str(auth_string)}
-
-        response = self.make_request("post", url, header=header, is_get_token=True)
+        response = self.make_request("post", url, payload=payload, is_get_token=True)
 
         if response.status_code != 200:
             print('bummer, couldn\'t get token, non-200')
@@ -155,19 +146,22 @@ class Request:
             pp.pprint(response_dict)
 
         try:
-            response_dict['access_token']
+            response_dict['accessToken']
         except KeyError:
             if not response_dict['status']:
                 print('bummer, couldn\'t get token, error message: {}'.
                       format(response_dict['errorMessage']))
                 sys.exit(1)
 
-        self.token_expire = datetime.now() + timedelta(minutes=config['token_lifetime'])
+        self.token = response_dict['accessToken']
+        self.refresh_token = response_dict['refreshToken']
+        self.accessTokenExpiresIn = response_dict['accessTokenExpiresIn']
+        self.token_expire = datetime.now() + timedelta(seconds=self.accessTokenExpiresIn)
         if verbose:
             print("new token expire time: {}".
                   format(datetime.strftime(self.token_expire,
                          date_format)))
-        return (response_dict['access_token'])
+        return (self.token)
 
 
 
@@ -176,7 +170,7 @@ def make_request(method, url, payload=None):
     global session
     global calls
 
-    if accessToken is '':
+    if accessToken == '':
         make_request
     token_string = "Bearer " + myconfig.config["span"]["auth"]["token"]
     headers = {
@@ -224,339 +218,78 @@ def make_request(method, url, payload=None):
 
     return response
 
-
-class Panel:
-    def __init__(self, host, extra_tab_pairs=None):
-        self.host = host
-        self.api_version = "api/v1"
-        self.extra_tab_pairs = extra_tab_pairs
+class Thermostat:
+    def __init__(self):
         # maybe check if we can actually talk to the panel before
         # going any further
-        self.init_mappings()
+        self.rqt = Request(dry_run=False)
+        self.api_base = myconfig.config['daikinone']['api_url_base']
 
-    def init_mappings(self):
-        self.pop_id_mappings()
-
-        # the solar stuff is not included in circuts, so we have
-        # to add it ourselves
-        if self.extra_tab_pairs is not None:
-            for pair in self.extra_tab_pairs:
-                self.tab_pairs.append(pair)
-
-    def get_status(self, flatten=False):
-        method = "GET"
-        url_stub = "status"
-        url = "http://{}/{}/{}".format(self.host, self.api_version, url_stub)
-        r = make_request(method, url, payload=None)
-
-        # see if the return code is 2XX
-        if math.trunc(r.status_code / 100) != 2:
-            thing = "Get status"
-            print(
-                "{} failed, {}, return code: {}".format(thing, r.reason, r.status_code)
-            )
-            sys.exit()
-
-        if verbose and r.status_code != 204:
-            pp.pprint(r)
+    def get_me(self):
+        method = 'get'
+        path = 'users/me'
+        url = '{}{}'.format(self.api_base, path)
+        r = self.rqt.make_request(method, url)
+        if r.status_code != 200:
+            return (None)
 
         if verbose:
             pp.pprint(r.json())
 
-        s = r.json()
-        if flatten:
-            return flatten_json(s)
-        else:
-            return s
+        return(r)
 
-    def get_panel(self):
-        method = "GET"
-        url_stub = "panel"
-        url = "http://{}/{}/{}".format(self.host, self.api_version, url_stub)
-        r = make_request(method, url, payload=None)
 
-        # see if the return code is 2XX
-        if math.trunc(r.status_code / 100) != 2:
-            thing = "Get panel"
-            print(
-                "{} failed, {}, return code: {}".format(thing, r.reason, r.status_code)
-            )
-            sys.exit()
-
-        if verbose and r.status_code != 204:
-            pp.pprint(r)
+    def get_locations(self):
+        method = 'get'
+        path = 'locations'
+        url = '{}{}'.format(self.api_base, path)
+        r = self.rqt.make_request(method, url)
+        if r.status_code != 200:
+            return (None)
 
         if verbose:
             pp.pprint(r.json())
 
-        return r.json()
+        return(r)
 
-    def is_panel_on_grid(self):
-        p = self.get_panel()
-        if p["currentRunConfig"] == "PANEL_ON_GRID":
-            return True
-        else:
-            return False
 
-    def panel_instantgridpowerw(self):
-        p = self.get_panel()
-        return p["instantGridPowerW"]
-
-    def get_branches(self):
-        b_dict = {}
-        p = self.get_panel()
-        for branch in p["branches"]:
-            b_dict[branch["id"]] = branch
-        return b_dict
-
-    def combine_branches(self, branch_a, branch_b):
-        branch_out = branch_a
-        for arg in [
-            "exportedActiveEnergyWh",
-            "importedActiveEnergyWh",
-            "instantPowerW",
-        ]:
-            branch_out[arg] = branch_a[arg] + branch_b[arg]
-        branch_out["ids"] = [branch_a["id"], branch_b["id"]]
-        return branch_out
-
-    def get_branches_combo(self):
-        b_dict = {}
-        p = self.get_panel()
-        # first populate brances to new dickt
-        for branch in p["branches"]:
-            b_dict[branch["id"]] = branch
-        keys_to_pop = []
-        for branchid in b_dict:
-            # dupe id into ids for non-combined branches
-            b_dict[branchid]["ids"] = [branchid]
-            for pair in self.tab_pairs:
-                if branchid in pair:
-                    a = b_dict[int(pair[0])]
-                    b = b_dict[int(pair[1])]
-                    if "combined" in a.keys() or "combined" in b.keys():
-                        continue
-                    combined = self.combine_branches(a, b)
-                    combined["combined"] = True
-                    b_dict[pair[0]] = combined
-                    keys_to_pop.append(pair[1])
-        ukeys_to_pop = list(set(keys_to_pop))
-        for k in ukeys_to_pop:
-            b_dict.pop(k)
-        return b_dict
-
-    # not the branch part:
-    #    'currentRunConfig': 'PANEL_ON_GRID',
-    #    'dsmGridState': 'DSM_GRID_UP',
-    #    'dsmState': 'DSM_ON_GRID',
-    #    'feedthroughEnergy': {   'consumedEnergyWh': -170847.5076028611,
-    #                             'producedEnergyWh': 100396.91888427734},
-    #    'feedthroughPowerW': 185.8552309796214,
-    #    'gridSampleEndMs': 2321461,
-    #    'gridSampleStartMs': 2321447,
-    #    'instantGridPowerW': -2474.18359375,
-    #    'mainMeterEnergy': {   'consumedEnergyWh': 166966.03515625,
-    #                           'producedEnergyWh': 253956.8828125},
-    #    'mainRelayState': 'CLOSED'}
-
-    def get_circuits(self, circuitid=None):
-        method = "GET"
-        url_stub = "circuits"
-        url = "http://{}/{}/{}".format(self.host, self.api_version, url_stub)
-        if circuitid is not None:
-            url = url + "/" + circuitid
-        r = make_request(method, url, payload=None)
-
-        # see if the return code is 2XX
-        if math.trunc(r.status_code / 100) != 2:
-            print("Can't get circuits: return code {}".format(r.status_code))
-            sys.exit()
-
-        if verbose and r.status_code != 204:
-            pp.pprint(r)
+    def get_devices(self):
+        method = 'get'
+        path = 'devices'
+        url = '{}{}'.format(self.api_base, path)
+        r = self.rqt.make_request(method, url)
+        if r.status_code != 200:
+            return (None)
 
         if verbose:
             pp.pprint(r.json())
 
-        return r.json()
+        return(r)
 
-    def get_circuit_by_tab(self, tab):
-        ret = self.get_circuits(self.tabs_id_mapping[tab])
-        return ret
-
-    def get_circuit_by_name(self, name):
-        ret = self.get_circuits(self.names_id_mapping[name])
-        return ret
-
-    def pop_id_mappings(self):
-        self.tabs_id_mapping = {}
-        self.names_id_mapping = {}
-        self.tabs_name_mapping = {}
-        self.circuit_list = []
-        self.tab_pairs = []
-        spaces = self.get_circuits()
-        if spaces is None:
-            print("Can't get circuits to get circuit mappings, bailing")
-            sys.exit()
-        for space in spaces:
-            for circuit in spaces[space]:
-                c = spaces[space][circuit]
-                self.circuit_list.append(c["id"])
-                tab_string = ",".join(str(c) for c in c["tabs"])
-                self.tabs_name_mapping[tab_string] = c["name"]
-                if len(c["tabs"]) > 1:
-                    self.tab_pairs.append(c["tabs"])
-                    tab_string = ",".join(str(c) for c in c["tabs"])
-                for n in c["tabs"]:
-                    self.tabs_id_mapping[n] = c["id"]
-                    self.names_id_mapping[c["name"]] = c["id"]
-
-    def list_tabs_id_mapping(self):
-        try:
-            self.tabs_id_mapping
-        except AttributeError:
-            self.init_mappings()
-        for n in sorted(self.tabs_id_mapping.keys()):
-            print(n, "--", self.tabs_id_mapping[n])
-
-    def get_tabs_id_mapping(self):
-        try:
-            self.tabs_id_mapping
-        except AttributeError:
-            self.init_mappings()
-        return self.tabs_id_mapping
-
-    def list_names_id_mapping(self):
-        try:
-            self.names_id_mapping
-        except AttributeError:
-            self.init_mappings()
-        for name in sorted(self.names_id_mapping.keys()):
-            print(name, "--", self.names_id_mapping[name])
-
-    def get_names_id_mapping(self):
-        try:
-            self.names_id_mapping
-        except AttributeError:
-            self.init_mappings()
-        return self.names_id_mapping
-
-    # names_first is easier for human to read instead of tab order
-    def list_tabs_name_mapping(self, names_first=False):
-        try:
-            self.tabs_name_mapping
-        except AttributeError:
-            self.init_mappings()
-        for str_tab in self.tabs_name_mapping:
-            if names_first:
-                print(self.tabs_name_mapping[str_tab], "--", str_tab)
-            else:
-                print(str_tab, "--", self.tabs_name_mapping[str_tab])
-
-    def get_tabs_name_mapping(self):
-        try:
-            self.tabs_name_mapping
-        except AttributeError:
-            self.init_mappings()
-        return self.tabs_name_mapping
-
-    def list_circuits(self):
-        try:
-            return self.circuit_list
-        except AttributeError:
-            self.init_mappings()
-            return self.circuit_list
-
-    def get_instantw(self, circuitid):
-        circuit = self.get_circuits(circuitid=circuitid)
-        return circuit["instantPowerW"]
-
-    def get_consumedenergywh(self, circuitid):
-        circuit = self.get_circuits(circuitid=circuitid)
-        return circuit["consumedEnergyWh"]
-
-    def get_name(self, circuitid):
-        circuit = self.get_circuits(circuitid=circuitid)
-        return circuit["name"]
-
-    def get_tab_pairs(self):
-        return self.tab_pairs
-
-    def get_clients(self, client=None):
-        method = "GET"
-        url_stub = "auth/clients"
-        url = "http://{}/{}/{}".format(self.host, self.api_version, url_stub)
-        if client is not None:
-            url = url + "/" + client
-        r = make_request(method, url, payload=None)
-
-        # see if the return code is 2XX
-        if math.trunc(r.status_code / 100) != 2:
-            thing = "Get clients"
-            print(
-                "{} failed, {}, return code: {}".format(thing, r.reason, r.status_code)
-            )
-            sys.exit()
-
-        if verbose and r.status_code != 204:
-            pp.pprint(r)
+    def get_thermostat(self):
+        method = 'get'
+        path = 'deviceData'
+        device_id = myconfig.config['daikinone']['thermostat_id']
+        url = '{}{}/{}'.format(self.api_base, path, device_id)
+        r = self.rqt.make_request(method, url)
+        if r.status_code != 200:
+            return (None)
 
         if verbose:
             pp.pprint(r.json())
 
-        s = r.json()
-        return s
+        return(r)
 
-    def add_clients(self, client, desc):
-        method = "POST"
-        url_stub = "auth/register"
-        data = {"name": client, "description": desc}
-        url = "http://{}/{}/{}".format(self.host, self.api_version, url_stub)
-        r = make_request(method, url, payload=data)
-
-        # see if the return code is 2XX
-        if math.trunc(r.status_code / 100) != 2:
-            thing = "Add clients"
-            print(
-                "{} failed, {}, return code: {}".format(thing, r.reason, r.status_code)
-            )
-            sys.exit()
-
-        if verbose and r.status_code != 204:
-            pp.pprint(r)
-
-        if verbose:
-            pp.pprint(r.json())
-
-        s = r.json()
-        return s
-
-    def delete_clients(self, client):
-        method = "DELETE"
-        url_stub = "auth/clients"
-        url = "http://{}/{}/{}".format(self.host, self.api_version, url_stub)
-        url = url + "/" + client
-        r = make_request(method, url, payload=None)
-
-        # see if the return code is 2XX
-        if math.trunc(r.status_code / 100) != 2:
-            thing = "Delete clients"
-            print(
-                "{} failed, {}, return code: {}".format(thing, r.reason, r.status_code)
-            )
-            sys.exit()
-
-        if verbose and r.status_code != 204:
-            pp.pprint(r)
-
-        if verbose:
-            pp.pprint(r.json())
-
-        s = r.json()
-        return s
 
 
 def main():
+    verbose = True
+    thermo = Thermostat()
+    thermo.get_me()
+    thermo.get_locations()
+    thermo.get_devices()
+    thermo.get_thermostat()
+
     exit(0)
 
 
