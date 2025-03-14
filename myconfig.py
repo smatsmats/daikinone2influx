@@ -7,7 +7,7 @@ import argparse
 import pprint
 
 verbose = 0
-directory_base = "."
+directory_base = "/usr/local/daikinone2influx"
 pp = pprint.PrettyPrinter(indent=4)
 
 

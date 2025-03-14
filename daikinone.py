@@ -17,11 +17,12 @@ bogus_date = datetime(1900, 1, 1)
 date_format = "%Y-%m-%dT%H:%M:%SZ"
 
 session = requests.Session()
-verbose = True
+verbose = False
 calls = 0
 
 access_token = ''
 refresh_token = ''
+
 
 def flatten_json(nested_json):
     out = {}
@@ -41,6 +42,7 @@ def flatten_json(nested_json):
     flatten(nested_json)
     return out
 
+
 class Request:
     def __init__(self, account="test", dry_run=True, allow_404=False):
         self.account = account
@@ -58,7 +60,8 @@ class Request:
     def make_request(self, method, url, payload=None,
                      header=None, is_get_token=False):
 
-        headers = {'content-type': 'application/json', 'Accept': 'application/json'}
+        headers = {'content-type': 'application/json',
+                   'Accept': 'application/json'}
         # add any headers needed
         if header is not None:
             headers.update(header)
@@ -134,7 +137,8 @@ class Request:
 
         url = 'https://api.daikinskyport.com/users/auth/login'
 
-        response = self.make_request("post", url, payload=payload, is_get_token=True)
+        response = self.make_request(
+            "post", url, payload=payload, is_get_token=True)
 
         if response.status_code != 200:
             print('bummer, couldn\'t get token, non-200')
@@ -164,7 +168,6 @@ class Request:
         return (self.token)
 
 
-
 def make_request(method, url, payload=None):
     global dry_run
     global session
@@ -181,7 +184,8 @@ def make_request(method, url, payload=None):
 
     #    mylogger.logger.debug("payload {}".format(json.dumps(payload)))
     if verbose:
-        pp.pprint("method", method, "url", url, "headers", headers, "payload", payload)
+        pp.pprint("method", method, "url", url,
+                  "headers", headers, "payload", payload)
 
     response = None
     c = 0
@@ -189,7 +193,8 @@ def make_request(method, url, payload=None):
     while response is None and c < max:
         try:
             response = session.request(
-                method=method, url=url, headers=headers, data=json.dumps(payload)
+                method=method, url=url, headers=headers, data=json.dumps(
+                    payload)
             )
             calls = calls + 1
 
@@ -218,6 +223,7 @@ def make_request(method, url, payload=None):
 
     return response
 
+
 class Thermostat:
     def __init__(self):
         # maybe check if we can actually talk to the panel before
@@ -236,8 +242,7 @@ class Thermostat:
         if verbose:
             pp.pprint(r.json())
 
-        return(r)
-
+        return (r)
 
     def get_locations(self):
         method = 'get'
@@ -250,8 +255,7 @@ class Thermostat:
         if verbose:
             pp.pprint(r.json())
 
-        return(r)
-
+        return (r)
 
     def get_devices(self):
         method = 'get'
@@ -264,7 +268,7 @@ class Thermostat:
         if verbose:
             pp.pprint(r.json())
 
-        return(r)
+        return (r)
 
     def get_thermostat(self):
         method = 'get'
@@ -278,8 +282,7 @@ class Thermostat:
         if verbose:
             pp.pprint(r.json())
 
-        return(r)
-
+        return (r)
 
 
 def main():
