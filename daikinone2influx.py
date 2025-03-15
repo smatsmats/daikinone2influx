@@ -16,6 +16,21 @@ import daikinone
 import myconfig
 import mylogger
 
+class Weekday(Enum):
+    MONDAY = 1
+    TUESDAY = 2
+    WEDNESDAY = 3
+    THURSDAY = 4
+    FRIDAY = 5
+    SATURDAY = 6
+    SUNDAY = 7
+class Status(Enum):
+    Cooling = 1
+    OvercoolDehumidifying = 2
+    Heating = 3
+    Fan = 4
+    Idle = 5
+
 pp = pprint.PrettyPrinter(indent=4)
 
 verbose = 0
@@ -104,7 +119,12 @@ def send2influx(data, selective=False):
         select = myconfig.config['daikinone']['select']
         print(select)
 
+    # Some conversions
+    data['equipmentStatus_text'] = str(Status(data['equipmentStatus']))
+
     push_data(measurement, data)
+
+    return(data)
 
 
 def main():
@@ -117,6 +137,9 @@ def main():
     parser.add_argument('--push2influx', dest='push2influx',
                         action='store_true', default=True,
                         help='push to influx')
+    parser.add_argument('--dump_thermo', dest='dump_thermo',
+                        action='store_true', default=False,
+                        help='Print everything from Daikin One thermostat')
     parser.add_argument('--get_me', dest='get_me',
                         action='store_true', default=False,
                         help='Get/print what Daikin One knows about me')
@@ -159,10 +182,14 @@ def main():
     r = thermo.get_thermostat()
     if r.status_code != 200:
         print("failed for some reason")
+        sys.exit()
     else:
         data = r.json()
-        send2influx(data, args.get_thermo_selective)
+        # this next function does modify the data blob some
+        data = send2influx(data, args.get_thermo_selective)
 
+    if args.dump_thermo:
+        pp.pprint(data)
 
 if __name__ == "__main__":
     main()
