@@ -75,12 +75,30 @@ def send2influx(data):
     if verbose: 
         print(measurement)
 
-    args = []
-    spas = []
-
     if verbose: 
         for key in data:
             print('{}={}'.format(key,data[key]))
+
+    # maybe make everything int a float?  
+    for k in ('ctInverterFinTemp', 'cspSched', 'hspSched', 'tempIndoor', 'sensorRawTemperature'):
+        if type(data[k]) != float:
+            logging.info(f'forcing {k} {data[k]} to float')
+            data[k] = float(data[k])
+
+    # maybe delete soem keys
+#    del data['hspSched']
+#    for k in ('hspSched'):
+#        print('gonna delete data for {} {}'.format(k, data[k]))
+#        del data[k]
+
+    # if there is no schedule remove all of the schedule data
+    to_delete = []
+    if data['schedEnabled'] is False:
+        for k in data.keys():
+            if k.startswith('sched'):
+                to_delete.append(k)
+    for k in to_delete:
+        del data[k]
 
     push_data(measurement, data)
 
@@ -92,9 +110,18 @@ def main():
     parser.add_argument('--verbose', dest='verbose',
                         action='store_true', default=0,
                         help='should we be really verbose, huh, should we?')
-    parser.add_argument(dest='push2influx',
+    parser.add_argument('--push2influx', dest='push2influx',
                         action='store_true', default=True,
                         help='push to influx')
+    parser.add_argument('--get_me', dest='get_me',
+                        action='store_true', default=False,
+                        help='Get/print what Daikin One knows about me')
+    parser.add_argument('--get_locations', dest='get_locations',
+                        action='store_true', default=False,
+                        help='Get/print what Daikin One knows about my location')
+    parser.add_argument('--get_devices', dest='get_devices',
+                        action='store_true', default=False,
+                        help='Get/print what Daikin One knows about my devices')
 
     args = parser.parse_args()
 
@@ -108,6 +135,18 @@ def main():
 
     # create thermostat client
     thermo = daikinone.Thermostat()
+
+    if args.get_me:
+        r = thermo.get_me()
+        pp.pprint(r.json())
+
+    if args.get_locations:
+        r = thermo.get_locations()
+        pp.pprint(r.json())
+
+    if args.get_devices:
+        r = thermo.get_devices()
+        pp.pprint(r.json())
 
     # just do it
     r = thermo.get_thermostat()
