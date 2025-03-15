@@ -64,7 +64,7 @@ def assign(key, value, data2push=None):
     return data2push
 
 
-def send2influx(data):
+def send2influx(data, selective=False):
 
     try:
         measurement = '{}-{}'.format(data['statBrand'], data['statModel'])
@@ -100,6 +100,10 @@ def send2influx(data):
     for k in to_delete:
         del data[k]
 
+    if selective:
+        select = myconfig.config['daikinone']['select']
+        print(select)
+
     push_data(measurement, data)
 
 
@@ -122,6 +126,9 @@ def main():
     parser.add_argument('--get_devices', dest='get_devices',
                         action='store_true', default=False,
                         help='Get/print what Daikin One knows about my devices')
+    parser.add_argument('--get_thermo_selective', dest='get_thermo_selective',
+                        action='store_true', default=False,
+                        help='Get/push a subset of Daikin One params')
 
     args = parser.parse_args()
 
@@ -154,7 +161,7 @@ def main():
         print("failed for some reason")
     else:
         data = r.json()
-        send2influx(data)
+        send2influx(data, args.get_thermo_selective)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,9 @@
 config/config.yml
 config/logging.yml
 curl_play/
+PROD
+TEST
+logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
