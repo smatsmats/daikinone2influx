@@ -1,11 +1,19 @@
 ---
 verbose: False
 
-  diakinone:
+diakinone:
   email: 'foo@bar.com'
+  password: 'BadPassword'
   api_key_id: 'xxx'
   api_key: 'xxx'
   integrator_token: 'xxxxxxxxxxxx'
+  location_id: '12345678-90ab-cdef-1234-567890abcdef'
+  thermostat_id: '12345678-90ab-cdef12345-67890abcdef1'
+  api_version: 1.0
+  api_url_base: 'https://api.daikinskyport.com/'
+  select:
+    - 'tempIndoor'
+    - 'tempOutdoor'
 
 influxdb:
   username: 'influx_usernamehere'
