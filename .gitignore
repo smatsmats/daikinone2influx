@@ -3,6 +3,7 @@ config/logging.yml
 curl_play/
 PROD
 TEST
+DEV
 logs/
 
 # Byte-compiled / optimized / DLL files
