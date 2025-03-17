@@ -102,7 +102,6 @@ def send2influx(data, selective=False):
     for k in (myconfig.config['daikinone']['make_floats']):
         if not isinstance(data[k], float):
             logging.info(f'forcing {k} {data[k]} to float')
-            print(f'forcing {k} {data[k]} to float')
             data[k] = float(data[k])
 
     # maybe delete soem keys
