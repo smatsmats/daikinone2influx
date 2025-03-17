@@ -16,6 +16,7 @@ import daikinone
 import myconfig
 import mylogger
 
+
 class Weekday(Enum):
     MONDAY = 1
     TUESDAY = 2
@@ -24,12 +25,15 @@ class Weekday(Enum):
     FRIDAY = 5
     SATURDAY = 6
     SUNDAY = 7
+
+
 class Status(Enum):
     Cooling = 1
     OvercoolDehumidifying = 2
     Heating = 3
     Fan = 4
     Idle = 5
+
 
 pp = pprint.PrettyPrinter(indent=4)
 
@@ -87,17 +91,18 @@ def send2influx(data, selective=False):
         print("missing keys for brand and model, can't go on")
         return
 
-    if verbose: 
+    if verbose:
         print(measurement)
 
-    if verbose: 
+    if verbose:
         for key in data:
-            print('{}={}'.format(key,data[key]))
+            print('{}={}'.format(key, data[key]))
 
-    # maybe make everything int a float?  
-    for k in ('ctInverterFinTemp', 'cspSched', 'hspSched', 'tempIndoor', 'sensorRawTemperature'):
-        if type(data[k]) != float:
+    # maybe make everything int a float?
+    for k in (myconfig.config['daikinone']['make_floats']):
+        if not isinstance(data[k], float):
             logging.info(f'forcing {k} {data[k]} to float')
+            print(f'forcing {k} {data[k]} to float')
             data[k] = float(data[k])
 
     # maybe delete soem keys
@@ -124,7 +129,7 @@ def send2influx(data, selective=False):
 
     push_data(measurement, data)
 
-    return(data)
+    return (data)
 
 
 def main():
@@ -145,10 +150,10 @@ def main():
                         help='Get/print what Daikin One knows about me')
     parser.add_argument('--get_locations', dest='get_locations',
                         action='store_true', default=False,
-                        help='Get/print what Daikin One knows about my location')
+                        help='Get/print what Daikin One location ingo')
     parser.add_argument('--get_devices', dest='get_devices',
                         action='store_true', default=False,
-                        help='Get/print what Daikin One knows about my devices')
+                        help='Get/print what Daikin One devices info')
     parser.add_argument('--get_thermo_selective', dest='get_thermo_selective',
                         action='store_true', default=False,
                         help='Get/push a subset of Daikin One params')
@@ -190,6 +195,7 @@ def main():
 
     if args.dump_thermo:
         pp.pprint(data)
+
 
 if __name__ == "__main__":
     main()
