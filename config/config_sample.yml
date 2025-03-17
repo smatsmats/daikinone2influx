@@ -11,6 +11,12 @@ diakinone:
   thermostat_id: '12345678-90ab-cdef12345-67890abcdef1'
   api_version: 1.0
   api_url_base: 'https://api.daikinskyport.com/'
+  make_floats:
+    - 'ctInverterFinTemp'
+    - 'cspSched'
+    - 'hspSched'
+    - 'tempIndoor'
+    - 'sensorRawTemperature'
   select:
     - 'tempIndoor'
     - 'tempOutdoor'
